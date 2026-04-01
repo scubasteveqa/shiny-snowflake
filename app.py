@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import snowflake.connector
 from shiny import App, reactive, render, ui
+from shinywidgets import output_widget
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
@@ -30,18 +31,18 @@ app_ui = ui.page_sidebar(
     ui.layout_columns(
         ui.card(
             ui.card_header("Sales by Category"),
-            ui.output_widget("chart_category"),
+            output_widget("chart_category"),
         ),
         ui.card(
             ui.card_header("Sales by Region"),
-            ui.output_widget("chart_region"),
+            output_widget("chart_region"),
         ),
         col_widths=[6, 6],
     ),
     ui.layout_columns(
         ui.card(
             ui.card_header("Monthly Sales Trend"),
-            ui.output_widget("chart_trend"),
+            output_widget("chart_trend"),
         ),
         col_widths=[12],
     ),
