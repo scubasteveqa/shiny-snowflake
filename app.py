@@ -2,13 +2,15 @@ import os
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import snowflake.connector
 from posit import connect
-from shiny import App, reactive, render, ui
+from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
+        ui.input_action_button("load_data", "Load Data", class_="btn-primary w-100"),
         ui.input_select(
             "category",
             "Category",
@@ -55,64 +57,91 @@ app_ui = ui.page_sidebar(
 )
 
 
-def server(input, output, session):
-    @reactive.calc
-    def sales_data():
-        user_session_token = session.http_conn.headers.get("Posit-Connect-User-Session-Token")
-        print(f"Session token present: {user_session_token is not None}")
-        print(f"Available headers: {list(session.http_conn.headers.keys())}")
-        if not user_session_token:
-            raise ValueError("Unable to get user session token. Make sure you're running in Posit Connect.")
+def server(i: Inputs, o: Outputs, session: Session):
+    data = reactive.Value(None)
 
-        client = connect.Client()
-        credentials = client.oauth.get_credentials(user_session_token)
-        access_token = credentials["access_token"]
-
-        conn = snowflake.connector.connect(
-            account=os.environ["SNOWFLAKE_ACCOUNT"],
-            token=access_token,
-            authenticator="oauth",
-            warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
-            database=os.environ.get("SNOWFLAKE_DATABASE", "STEVEW_TEST_DB"),
-            schema=os.environ.get("SNOWFLAKE_SCHEMA", "PUBLIC"),
-        )
+    @reactive.effect
+    @reactive.event(i.load_data)
+    def fetch_data():
         try:
-            df = pd.read_sql("SELECT * FROM SALES", conn)
-        finally:
-            conn.close()
+            session_token = session.http_conn.headers.get(
+                "Posit-Connect-User-Session-Token"
+            )
+            if not session_token:
+                ui.notification_show(
+                    "No session token found. Deploy this app on Posit Connect.",
+                    type="error",
+                )
+                return
 
-        df.columns = df.columns.str.upper()
-        df["SALE_DATE"] = pd.to_datetime(df["SALE_DATE"])
-        df["MONTH"] = df["SALE_DATE"].dt.to_period("M").astype(str)
-        return df
+            client = connect.Client()
+            credentials = client.oauth.get_credentials(session_token)
+            access_token = credentials["access_token"]
+
+            conn = snowflake.connector.connect(
+                account=os.environ["SNOWFLAKE_ACCOUNT"],
+                token=access_token,
+                authenticator="oauth",
+                warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
+                database=os.environ.get("SNOWFLAKE_DATABASE", "STEVEW_TEST_DB"),
+                schema=os.environ.get("SNOWFLAKE_SCHEMA", "PUBLIC"),
+            )
+            try:
+                df = pd.read_sql("SELECT * FROM SALES", conn)
+            finally:
+                conn.close()
+
+            df.columns = df.columns.str.upper()
+            df["SALE_DATE"] = pd.to_datetime(df["SALE_DATE"])
+            df["MONTH"] = df["SALE_DATE"].dt.to_period("M").astype(str)
+            data.set(df)
+            ui.notification_show(
+                f"Loaded {len(df)} rows from Snowflake", type="message"
+            )
+        except Exception as e:
+            ui.notification_show(
+                f"Error: {type(e).__name__}: {e}", type="error", duration=10
+            )
 
     @reactive.calc
     def filtered_data():
-        df = sales_data()
-        if input.category() != "All":
-            df = df[df["CATEGORY"] == input.category()]
-        if input.region() != "All":
-            df = df[df["REGION"] == input.region()]
+        df = data()
+        if df is None:
+            return None
+        if i.category() != "All":
+            df = df[df["CATEGORY"] == i.category()]
+        if i.region() != "All":
+            df = df[df["REGION"] == i.region()]
         return df
 
     @render.text
     def total_sales():
-        return f"${filtered_data()['TOTAL_AMOUNT'].sum():,.2f}"
+        df = filtered_data()
+        if df is None:
+            return "--"
+        return f"${df['TOTAL_AMOUNT'].sum():,.2f}"
 
     @render.text
     def total_orders():
-        return str(len(filtered_data()))
+        df = filtered_data()
+        if df is None:
+            return "--"
+        return str(len(df))
 
     @render.text
     def avg_order():
         df = filtered_data()
-        if len(df) == 0:
-            return "$0.00"
+        if df is None or len(df) == 0:
+            return "--"
         return f"${df['TOTAL_AMOUNT'].mean():,.2f}"
 
     @render_widget
     def chart_category():
         df = filtered_data()
+        if df is None:
+            fig = go.Figure()
+            fig.update_layout(title="Click 'Load Data' to fetch from Snowflake", template="plotly_white", height=400)
+            return fig
         agg = df.groupby("CATEGORY", as_index=False)["TOTAL_AMOUNT"].sum()
         return px.bar(
             agg,
@@ -125,6 +154,10 @@ def server(input, output, session):
     @render_widget
     def chart_region():
         df = filtered_data()
+        if df is None:
+            fig = go.Figure()
+            fig.update_layout(title="Click 'Load Data' to fetch from Snowflake", template="plotly_white", height=400)
+            return fig
         agg = df.groupby("REGION", as_index=False)["TOTAL_AMOUNT"].sum()
         return px.pie(
             agg,
@@ -136,6 +169,10 @@ def server(input, output, session):
     @render_widget
     def chart_trend():
         df = filtered_data()
+        if df is None:
+            fig = go.Figure()
+            fig.update_layout(title="Click 'Load Data' to fetch from Snowflake", template="plotly_white", height=400)
+            return fig
         agg = df.groupby("MONTH", as_index=False)["TOTAL_AMOUNT"].sum()
         return px.line(
             agg,
@@ -148,6 +185,8 @@ def server(input, output, session):
     @render.data_frame
     def sales_table():
         df = filtered_data()
+        if df is None:
+            return render.DataGrid(pd.DataFrame())
         display = df[
             ["SALE_DATE", "PRODUCT_NAME", "CATEGORY", "QUANTITY", "UNIT_PRICE", "TOTAL_AMOUNT", "REGION", "CUSTOMER_NAME"]
         ].copy()
