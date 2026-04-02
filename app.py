@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import plotly.express as px
 import snowflake.connector
+from posit import connect
 from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
@@ -57,9 +58,17 @@ app_ui = ui.page_sidebar(
 def server(input, output, session):
     @reactive.calc
     def sales_data():
+        user_session_token = session.http_conn.headers.get("Posit-Connect-User-Session-Token")
+        if not user_session_token:
+            raise ValueError("Unable to get user session token. Make sure you're running in Posit Connect.")
+
+        client = connect.Client()
+        credentials = client.oauth.get_credentials(user_session_token)
+        access_token = credentials["access_token"]
+
         conn = snowflake.connector.connect(
             account=os.environ["SNOWFLAKE_ACCOUNT"],
-            token=os.environ["SNOWFLAKE_TOKEN"],
+            token=access_token,
             authenticator="oauth",
             warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
             database=os.environ.get("SNOWFLAKE_DATABASE", "STEVEW_TEST_DB"),
