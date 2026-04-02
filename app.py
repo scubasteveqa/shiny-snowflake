@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 import snowflake.connector
 from shiny import App, reactive, render, ui
-from shinywidgets import output_widget
+from shinywidgets import output_widget, render_widget
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
@@ -99,7 +99,7 @@ def server(input, output, session):
             return "$0.00"
         return f"${df['TOTAL_AMOUNT'].mean():,.2f}"
 
-    @render.widget
+    @render_widget
     def chart_category():
         df = filtered_data()
         agg = df.groupby("CATEGORY", as_index=False)["TOTAL_AMOUNT"].sum()
@@ -111,7 +111,7 @@ def server(input, output, session):
             labels={"TOTAL_AMOUNT": "Total Sales ($)", "CATEGORY": "Category"},
         )
 
-    @render.widget
+    @render_widget
     def chart_region():
         df = filtered_data()
         agg = df.groupby("REGION", as_index=False)["TOTAL_AMOUNT"].sum()
@@ -122,7 +122,7 @@ def server(input, output, session):
             labels={"TOTAL_AMOUNT": "Total Sales ($)", "REGION": "Region"},
         )
 
-    @render.widget
+    @render_widget
     def chart_trend():
         df = filtered_data()
         agg = df.groupby("MONTH", as_index=False)["TOTAL_AMOUNT"].sum()
