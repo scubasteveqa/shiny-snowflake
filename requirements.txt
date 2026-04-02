@@ -3,3 +3,4 @@ pandas
 plotly
 shinywidgets
 snowflake-connector-python
+posit-sdk
