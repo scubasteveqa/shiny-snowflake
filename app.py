@@ -59,6 +59,8 @@ def server(input, output, session):
     @reactive.calc
     def sales_data():
         user_session_token = session.http_conn.headers.get("Posit-Connect-User-Session-Token")
+        print(f"Session token present: {user_session_token is not None}")
+        print(f"Available headers: {list(session.http_conn.headers.keys())}")
         if not user_session_token:
             raise ValueError("Unable to get user session token. Make sure you're running in Posit Connect.")
 
